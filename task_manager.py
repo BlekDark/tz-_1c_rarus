@@ -1,30 +1,44 @@
-import uuid
+from database import get_db
+from models import TaskCreate, TaskUpdate
+from typing import Optional
 
-class TaskManager:
-    def __init__(self):
-        self.tasks = {}
+async def add_task(task_data: TaskCreate):
+    db = await get_db()
+    async with db.execute(
+        "INSERT INTO tasks (title, priority) VALUES (?, ?)",
+        (task_data.title, task_data.priority)
+    ) as cursor:
+        await db.commit()
+        task_id = cursor.lastrowid
+    return {"id": task_id, "title": task_data.title, "priority": task_data.priority, "status": "pending"}
 
-    def add_task(self, title, priority):
-        task_id = str(uuid.uuid4())  # Генерация уникального ID для задачи
-        task = {
-            "id": task_id,
-            "title": title,
-            "priority": priority
-        }
-        self.tasks[task_id] = task
-        return task
+async def get_tasks(status: Optional[str] = None):
+    db = await get_db()
+    if status:
+        query = "SELECT * FROM tasks WHERE status = ?"
+        args = (status,)
+    else:
+        query = "SELECT * FROM tasks"
+        args = ()
+    async with db.execute(query, args) as cursor:
+        tasks = await cursor.fetchall()
+        return [dict(task) for task in tasks]
 
-    def get_tasks(self):
-        return list(self.tasks.values())
+async def update_task(task_id: int, task_data: TaskUpdate):
+    db = await get_db()
+    query = "UPDATE tasks SET title = ?, priority = ?, status = ? WHERE id = ?"
+    async with db.execute(query, (task_data.title, task_data.priority, task_data.status, task_id)):
+        await db.commit()
+    return await get_task_by_id(task_id)
 
-    def update_task(self, task_id, title=None, priority=None):
-        if task_id in self.tasks:
-            if title:
-                self.tasks[task_id]["title"] = title
-            if priority:
-                self.tasks[task_id]["priority"] = priority
-            return self.tasks[task_id]
-        return None
+async def delete_task(task_id: int):
+    db = await get_db()
+    async with db.execute("DELETE FROM tasks WHERE id = ?", (task_id,)):
+        await db.commit()
+    return {"message": "Task deleted"}
 
-    def delete_task(self, task_id):
-        return self.tasks.pop(task_id, None)
+async def get_task_by_id(task_id: int):
+    db = await get_db()
+    async with db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)) as cursor:
+        task = await cursor.fetchone()
+        return dict(task) if task else None
