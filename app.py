@@ -1,40 +1,38 @@
-from flask import Flask, request, jsonify
-from task_manager import TaskManager
+from fastapi import FastAPI, HTTPException, Depends
+from models import TaskCreate, TaskUpdate, TaskOut
+from task_manager import add_task, get_tasks, update_task, delete_task
 
-app = Flask(__name__)
-task_manager = TaskManager()
+app = FastAPI()
 
-@app.route('/tasks', methods=['POST'])
-def create_task():
-    data = request.get_json()
-    title = data.get('title')
-    priority = data.get('priority')
-    if not title or not priority:
-        return jsonify({'error': 'Missing title or priority'}), 400
-    task = task_manager.add_task(title, priority)
-    return jsonify(task), 201
+@app.on_event("startup")
+async def startup():
+    from database import init_db
+    await init_db()
 
-@app.route('/tasks', methods=['GET'])
-def get_tasks():
-    tasks = task_manager.get_tasks()
-    return jsonify(tasks), 200
+@app.post("/tasks", response_model=TaskOut)
+async def create_task(task_data: TaskCreate):
+    task = await add_task(task_data)
+    return task
 
-@app.route('/tasks/<task_id>', methods=['PUT'])
-def update_task(task_id):
-    data = request.get_json()
-    title = data.get('title')
-    priority = data.get('priority')
-    task = task_manager.update_task(task_id, title, priority)
+@app.get("/tasks", response_model=list[TaskOut])
+async def read_tasks(status: str = None):
+    tasks = await get_tasks(status)
+    return tasks
+
+@app.put("/tasks/{task_id}", response_model=TaskOut)
+async def update_task_endpoint(task_id: int, task_data: TaskUpdate):
+    task = await update_task(task_id, task_data)
     if task:
-        return jsonify(task), 200
-    return jsonify({'error': 'Task not found'}), 404
+        return task
+    raise HTTPException(status_code=404, detail="Task not found")
 
-@app.route('/tasks/<task_id>', methods=['DELETE'])
-def delete_task(task_id):
-    task = task_manager.delete_task(task_id)
+@app.delete("/tasks/{task_id}")
+async def delete_task_endpoint(task_id: int):
+    task = await delete_task(task_id)
     if task:
-        return jsonify({'message': 'Task deleted'}), 200
-    return jsonify({'error': 'Task not found'}), 404
+        return task
+    raise HTTPException(status_code=404, detail="Task not found")
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
